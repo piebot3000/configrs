@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::path::PathBuf;
 use std::fs;
 
@@ -13,7 +12,7 @@ fn run() -> Result<(), ConfigrsError>{
     // loading either from confys default, or a user supplied config
     let mut cfg: app::Config = match app::load_cfg(args.value_of("config")) {
         Ok(cfg) => cfg,
-        Err(_) => return Err(ConfigrsError::BadConfig)
+        Err(e) => return Err(ConfigrsError::LoadConfig(e))
     };
 
     let mut changed_config: bool = false;
@@ -24,56 +23,49 @@ fn run() -> Result<(), ConfigrsError>{
         ("edit", Some(edit_args)) => {
             let file = edit_args.value_of("file")
                     .expect("file somehow missing, clap.");
+
             match edit(&mut cfg, file) {
-                Ok(()) => Ok(()),
-                Err(_) => return Err(ConfigrsError::IDK)
+                Ok(()) => (),
+                Err(e) => return Err(ConfigrsError::Editor(e))
             };
         },
+        
         ("add", Some(add_args)) => {
             let name = add_args.value_of("name")
                 .expect("name somehow missing, clap.");
             let file = add_args.value_of("file")
                 .expect("file somehow missing, clap.");
-            add(
-                &mut cfg, 
-                name,
-                file
-            );
+
+            add(&mut cfg, name, file);
             changed_config = true;
         },
+        
         ("remove", Some(remove_args)) => {
             let file = remove_args.value_of("file")
                 .expect("name somehow missing, clap.");
-            remove(
-                &mut cfg, 
-                file
-            );
+            
+            remove(&mut cfg, file);
             changed_config = true;
         },
+
         ("yoink", Some(yoink_args)) => {
             let directory = PathBuf::from(yoink_args.value_of("directory")
                 .expect("directory somehow missing, clap."));
 
-            match yoink(
-                &cfg, 
-                directory
-            ) { 
-                Ok(()) => Ok(()),
-                Err(_) => return Err(ConfigrsError::IDK)
+            match yoink(&cfg, directory) { 
+                Ok(()) => (),
+                Err(e) => return Err(ConfigrsError::Io(e))
             };
         },
+
         ("yeet", Some(yeet_args)) => {
             let dry_run = yeet_args.is_present("dry_run");
             let directory = PathBuf::from(yeet_args.value_of("directory")
                 .expect("directory somehow missing, clap."));
 
-            match yeet(
-                &cfg, 
-                dry_run,
-                directory,
-            ) {
-                Ok(()) => Ok(()),
-                Err(_) => Err(ConfigrsError::IDK)
+            match yeet(&cfg, dry_run, directory) {
+                Ok(()) => (),
+                Err(e) => return Err(ConfigrsError::Io(e))
             };
         },
         _ => unreachable!()
@@ -83,7 +75,10 @@ fn run() -> Result<(), ConfigrsError>{
 
     // if we changed the config (add, remove) then we need to store it again
     if changed_config {
-        app::store_cfg(args.value_of("config"), cfg)?;
+        match app::store_cfg(args.value_of("config"), cfg) {
+            Ok(()) => (),
+            Err(e) => return Err(ConfigrsError::SaveConfig(e))
+        };
     }
 
     // everything went ok
@@ -148,7 +143,7 @@ fn edit(cfg: &mut app::Config, name: &str) -> Result<(), String> {
         .arg(path)
         .status() {
         Ok(_) => Ok(()),
-        Err(e) => Err(format!("Failed to run editor: {:?}", e))
+        Err(e) => Err(format!("{:?}", e))
     }
 }
     
@@ -158,8 +153,17 @@ fn main() {
     match result {
         Ok(()) => {
         },
-        Err(e) => {
-            eprintln!("error {:?}", e);
+        Err(ConfigrsError::LoadConfig(e)) => {
+            eprintln!("Failed to load config: {:?}", e);
+        }
+        Err(ConfigrsError::SaveConfig(e)) => {
+            eprintln!("Failed to save config: {:?}", e);
+        }
+        Err(ConfigrsError::Io(e)) => {
+            eprintln!("Failed to move files: {:?}", e);
+        }
+        Err(ConfigrsError::Editor(e)) => {
+            eprintln!("Failed to run editor: {:?}", e);
         }
     }
 }
