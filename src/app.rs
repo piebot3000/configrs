@@ -1,18 +1,19 @@
 use clap::{Arg, App, SubCommand, AppSettings};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub version: String,
-    pub repo: HashMap<String, String>,
+    pub repo: HashMap<String, PathBuf>,
 }
 
 impl std::default::Default for Config {
     fn default() -> Self {
         Self {
             version: "0.1.0".to_string(),
-            repo: HashMap::default(),
+            repo: HashMap::<String, PathBuf>::default(),
         }
     }
 }
@@ -50,6 +51,22 @@ pub fn build() -> App<'static, 'static> {
                 .help("file to be removed")
                 .required(true)
                 .index(1)))
+        .subcommand(SubCommand::with_name("yoink")
+            .about("grab all files from their place on the system and copy them to the directory")
+            .arg(Arg::with_name("directory")
+                 .help("directory to store the files")
+                 .required(true)
+                 .index(1)))
+        .subcommand(SubCommand::with_name("yeet")
+            .about("restore all files in the config dir to their place on the system")
+            .arg(Arg::with_name("directory")
+                 .help("directory to store the files")
+                 .required(true)
+                 .index(1))
+            .arg(Arg::with_name("dry_run")
+                 .help("perform a dry run and do no actions")
+                 .short("d")
+                 .long("dry_run")))
 }
 
 

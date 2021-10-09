@@ -1,4 +1,6 @@
 use std::error::Error;
+use std::path::PathBuf;
+use std::fs;
 
 mod app;
 
@@ -9,35 +11,100 @@ fn run() -> Result<(), Box<dyn Error>>{
     // loading either from confys default, or a user supplied config
     let mut cfg: app::Config = app::load_cfg(args.value_of("config"))?;
 
+    let mut changed_config: bool = false;
+    
+
     // match which subcommand has been used
     match args.subcommand() {
         ("edit", Some(edit_args)) => {
-            edit(
-                &mut cfg, 
-                edit_args.value_of("file")
-                    .expect("file somehow missing, clap.")
-            )?;
+            let file = edit_args.value_of("file")
+                    .expect("file somehow missing, clap.");
+            edit(&mut cfg, file)?;
         },
         ("add", Some(add_args)) => {
+            let name = add_args.value_of("name")
+                .expect("name somehow missing, clap.");
+            let file = add_args.value_of("file")
+                .expect("file somehow missing, clap.");
             add(
                 &mut cfg, 
-                add_args.value_of("name").expect("name somehow missing, clap."), 
-                add_args.value_of("file").expect("file somehow missing, clap.")
+                name,
+                file
             );
-            app::store_cfg(args.value_of("config"), cfg)?;
+            changed_config = true;
         },
         ("remove", Some(remove_args)) => {
+            let file = remove_args.value_of("file")
+                .expect("name somehow missing, clap.");
             remove(
                 &mut cfg, 
-                remove_args.value_of("file").expect("name somehow missing, clap."), 
+                file
             );
-            app::store_cfg(args.value_of("config"), cfg)?;
+            changed_config = true;
+        },
+        ("yoink", Some(yoink_args)) => {
+            let directory = PathBuf::from(yoink_args.value_of("directory")
+                .expect("directory somehow missing, clap."));
+
+            yoink(
+                &cfg, 
+                directory
+            )?;
+        },
+        ("yeet", Some(yeet_args)) => {
+            let dry_run = yeet_args.is_present("dry_run");
+            let directory = PathBuf::from(yeet_args.value_of("directory")
+                .expect("directory somehow missing, clap."));
+
+            yeet(
+                &cfg, 
+                dry_run,
+                directory,
+             )?;
         },
         _ => unreachable!()
     }
 
 
+
+    // if we changed the config (add, remove) then we need to store it again
+    if changed_config {
+        app::store_cfg(args.value_of("config"), cfg)?;
+    }
+
     // everything went ok
+    Ok(())
+}
+
+fn yoink(cfg: &app::Config, directory: PathBuf) -> Result<(), std::io::Error> {
+    for (name, file) in &cfg.repo {
+        let mut dir = directory.clone();
+        dir.push(&name);
+        println!("Moving {:?} to {:?}", &file, &dir);
+        fs::copy(file, dir)?;
+    }
+
+    Ok(())
+}
+
+fn yeet(
+    cfg: &app::Config, 
+    dry_run: bool, 
+    directory: PathBuf
+) -> Result<(), std::io::Error> {
+
+    if dry_run { 
+        println!("Doing a dry run");
+    }
+    for (name, file) in &cfg.repo {
+        let mut dir = directory.clone();
+        dir.push(&name);
+        println!("Moving file {:?} to {:?}", &dir, &file);
+        if !dry_run {
+            fs::copy(dir, file)?;
+        }
+    }
+
     Ok(())
 }
 
@@ -52,7 +119,7 @@ fn remove(cfg: &mut app::Config, name: &str) {
 }
 
 fn add(cfg: &mut app::Config, name: &str, file: &str) {
-    cfg.repo.insert(name.to_string(), file.to_string());
+    cfg.repo.insert(name.to_string(), PathBuf::from(file));
     println!("Added {} => {} to the repository", name, file);
 }
 
