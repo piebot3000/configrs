@@ -3,13 +3,18 @@ use std::path::PathBuf;
 use std::fs;
 
 mod app;
+mod error;
+use error::ConfigrsError;
 
-fn run() -> Result<(), Box<dyn Error>>{
+fn run() -> Result<(), ConfigrsError>{
     // setting up arguments and whatnot
     let args = app::build().get_matches();
 
     // loading either from confys default, or a user supplied config
-    let mut cfg: app::Config = app::load_cfg(args.value_of("config"))?;
+    let mut cfg: app::Config = match app::load_cfg(args.value_of("config")) {
+        Ok(cfg) => cfg,
+        Err(_) => return Err(ConfigrsError::BadConfig)
+    };
 
     let mut changed_config: bool = false;
     
@@ -19,7 +24,10 @@ fn run() -> Result<(), Box<dyn Error>>{
         ("edit", Some(edit_args)) => {
             let file = edit_args.value_of("file")
                     .expect("file somehow missing, clap.");
-            edit(&mut cfg, file)?;
+            match edit(&mut cfg, file) {
+                Ok(()) => Ok(()),
+                Err(_) => return Err(ConfigrsError::IDK)
+            };
         },
         ("add", Some(add_args)) => {
             let name = add_args.value_of("name")
@@ -46,21 +54,27 @@ fn run() -> Result<(), Box<dyn Error>>{
             let directory = PathBuf::from(yoink_args.value_of("directory")
                 .expect("directory somehow missing, clap."));
 
-            yoink(
+            match yoink(
                 &cfg, 
                 directory
-            )?;
+            ) { 
+                Ok(()) => Ok(()),
+                Err(_) => return Err(ConfigrsError::IDK)
+            };
         },
         ("yeet", Some(yeet_args)) => {
             let dry_run = yeet_args.is_present("dry_run");
             let directory = PathBuf::from(yeet_args.value_of("directory")
                 .expect("directory somehow missing, clap."));
 
-            yeet(
+            match yeet(
                 &cfg, 
                 dry_run,
                 directory,
-             )?;
+            ) {
+                Ok(()) => Ok(()),
+                Err(_) => Err(ConfigrsError::IDK)
+            };
         },
         _ => unreachable!()
     }
