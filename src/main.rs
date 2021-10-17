@@ -1,91 +1,84 @@
-use std::path::PathBuf;
+use anyhow::anyhow;
+use anyhow::bail;
+use anyhow::Result;
 use std::fs;
+use std::path::PathBuf;
 
 mod app;
-mod error;
-use error::ConfigrsError;
-
-fn run() -> Result<(), ConfigrsError>{
+fn run() -> Result<()> {
     // setting up arguments and whatnot
     let args = app::build().get_matches();
 
     // loading either from confys default, or a user supplied config
-    let mut cfg: app::Config = match app::load_cfg(args.value_of("config")) {
-        Ok(cfg) => cfg,
-        Err(e) => return Err(ConfigrsError::LoadConfig(e))
-    };
+    let mut cfg: app::Config = app::load_cfg(args.value_of("config"))?;
 
+    // check to see if we need to rewrite the config before exiting
     let mut changed_config: bool = false;
-    
 
     // match which subcommand has been used
     match args.subcommand() {
         ("edit", Some(edit_args)) => {
-            let file = edit_args.value_of("file")
-                    .expect("file somehow missing, clap.");
+            let file = edit_args
+                .value_of("file")
+                .expect("file somehow missing, clap.");
 
-            match edit(&mut cfg, file) {
-                Ok(()) => (),
-                Err(e) => return Err(ConfigrsError::Editor(e))
-            };
-        },
-        
+            edit(&mut cfg, file)?;
+        }
+
         ("add", Some(add_args)) => {
-            let name = add_args.value_of("name")
+            let name = add_args
+                .value_of("name")
                 .expect("name somehow missing, clap.");
-            let file = add_args.value_of("file")
+            let file = add_args
+                .value_of("file")
                 .expect("file somehow missing, clap.");
 
             add(&mut cfg, name, file);
             changed_config = true;
-        },
-        
+        }
+
         ("remove", Some(remove_args)) => {
-            let file = remove_args.value_of("file")
+            let file = remove_args
+                .value_of("file")
                 .expect("name somehow missing, clap.");
-            
-            remove(&mut cfg, file);
+
+            remove(&mut cfg, file)?;
             changed_config = true;
-        },
+        }
 
         ("yoink", Some(yoink_args)) => {
-            let directory = PathBuf::from(yoink_args.value_of("directory")
-                .expect("directory somehow missing, clap."));
+            let directory = PathBuf::from(
+                yoink_args
+                    .value_of("directory")
+                    .expect("directory somehow missing, clap."),
+            );
 
-            match yoink(&cfg, directory) { 
-                Ok(()) => (),
-                Err(e) => return Err(ConfigrsError::Io(e))
-            };
-        },
+            yoink(&cfg, directory)?;
+        }
 
         ("yeet", Some(yeet_args)) => {
             let dry_run = yeet_args.is_present("dry_run");
-            let directory = PathBuf::from(yeet_args.value_of("directory")
-                .expect("directory somehow missing, clap."));
+            let directory = PathBuf::from(
+                yeet_args
+                    .value_of("directory")
+                    .expect("directory somehow missing, clap."),
+            );
 
-            match yeet(&cfg, dry_run, directory) {
-                Ok(()) => (),
-                Err(e) => return Err(ConfigrsError::Io(e))
-            };
-        },
-        _ => unreachable!()
+            yeet(&cfg, dry_run, directory)?;
+        }
+        _ => unreachable!(),
     }
-
-
 
     // if we changed the config (add, remove) then we need to store it again
     if changed_config {
-        match app::store_cfg(args.value_of("config"), cfg) {
-            Ok(()) => (),
-            Err(e) => return Err(ConfigrsError::SaveConfig(e))
-        };
+        app::store_cfg(args.value_of("config"), cfg)?;
     }
 
     // everything went ok
     Ok(())
 }
 
-fn yoink(cfg: &app::Config, directory: PathBuf) -> Result<(), std::io::Error> {
+fn yoink(cfg: &app::Config, directory: PathBuf) -> Result<()> {
     for (name, file) in &cfg.repo {
         let mut dir = directory.clone();
         dir.push(&name);
@@ -96,13 +89,8 @@ fn yoink(cfg: &app::Config, directory: PathBuf) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn yeet(
-    cfg: &app::Config, 
-    dry_run: bool, 
-    directory: PathBuf
-) -> Result<(), std::io::Error> {
-
-    if dry_run { 
+fn yeet(cfg: &app::Config, dry_run: bool, directory: PathBuf) -> Result<()> {
+    if dry_run {
         println!("Doing a dry run");
     }
     for (name, file) in &cfg.repo {
@@ -117,13 +105,14 @@ fn yeet(
     Ok(())
 }
 
-fn remove(cfg: &mut app::Config, name: &str) {
+fn remove(cfg: &mut app::Config, name: &str) -> Result<()> {
     let res = cfg.repo.remove(&name.to_string());
 
     if let Some(path) = res {
         println!("Removed {} => {:?}", name, path);
+        Ok(())
     } else {
-        println!("{} is not in the repository", name);
+        bail!("{} is not in the repository", name);
     }
 }
 
@@ -132,38 +121,16 @@ fn add(cfg: &mut app::Config, name: &str, file: &str) {
     println!("Added {} => {} to the repository", name, file);
 }
 
-fn edit(cfg: &mut app::Config, name: &str) -> Result<(), String> {
-    let path = match cfg.repo.get(name) {
-        Some(p) => p,
-        None => return Err("That file is not in the repository.".to_string())
-    };
+fn edit(cfg: &mut app::Config, name: &str) -> Result<()> {
+    let path = cfg
+        .repo
+        .get(name)
+        .ok_or_else(|| anyhow!("{} is not in the repository", name))?;
 
-    let editor = std::env::var("EDITOR").unwrap_or("vi".to_string());
-    match std::process::Command::new(editor)
-        .arg(path)
-        .status() {
-        Ok(_) => Ok(()),
-        Err(e) => Err(format!("{:?}", e))
-    }
+    edit::edit_file(path)?;
+    Ok(())
 }
-    
-fn main() {
-    let result = run();
 
-    match result {
-        Ok(()) => {
-        },
-        Err(ConfigrsError::LoadConfig(e)) => {
-            eprintln!("Failed to load config: {:?}", e);
-        }
-        Err(ConfigrsError::SaveConfig(e)) => {
-            eprintln!("Failed to save config: {:?}", e);
-        }
-        Err(ConfigrsError::Io(e)) => {
-            eprintln!("Failed to move files: {:?}", e);
-        }
-        Err(ConfigrsError::Editor(e)) => {
-            eprintln!("Failed to run editor: {:?}", e);
-        }
-    }
+fn main() -> Result<()> {
+    run()
 }

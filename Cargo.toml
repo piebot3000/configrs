@@ -8,4 +8,6 @@ edition = "2018"
 [dependencies]
 clap="*"
 confy="*"
+anyhow="*"
+edit="*"
 serde= { version="*", features=["derive"] }
