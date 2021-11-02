@@ -21,24 +21,28 @@ impl std::default::Default for Config {
 #[derive(StructOpt)]
 #[structopt(name="Configrs", about="simple utility to help deal with config files")]
 pub struct Opt {
-    #[structopt(short, long)]
-    pub add: bool,
-    #[structopt(short, long)]
-    pub remove: bool,
-    #[structopt(short, long)]
-    pub yoink: bool,
-
-    #[structopt()]
-    pub name: String,
-
     #[structopt(short, long="config")]
     pub config_file: Option<PathBuf>,
 
-    #[structopt(required_if("add", "true"), required_if("remove", "true"))]
-    pub file: Option<PathBuf>,
+    #[structopt(subcommand)]
+    pub cmd: Command,
+}
 
-    #[structopt(required_if("yoink", "true"))]
-    pub directory: Option<PathBuf>,
+#[derive(StructOpt)]
+pub enum Command {
+    Add {
+        name: String,
+        file: PathBuf
+    },
+    Remove {
+        name: String
+    },
+    Edit {
+        name: String
+    },
+    Yoink {
+        directory: PathBuf 
+    }
 }
 
 pub fn load_cfg(path: &Option<PathBuf>) -> Result<Config, confy::ConfyError> {

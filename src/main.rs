@@ -6,6 +6,8 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 
 mod app;
+use app::Command;
+
 fn run() -> Result<()> {
     // setting up arguments and whatnot
     let args = app::Opt::from_args();
@@ -17,16 +19,21 @@ fn run() -> Result<()> {
     let mut changed_config: bool = false;
 
     // match which subcommand has been used
-    if args.add {
-        add(&mut cfg, &args.name, &args.file.unwrap());
-        changed_config = true;
-    } else if args.remove {
-        remove(&mut cfg, &args.name)?;
-        changed_config = true;
-    } else if args.yoink {
-        yoink(&cfg, &args.directory.unwrap())?;
-    } else {
-        edit(&mut cfg, &args.name)?;
+    match args.cmd {
+        Command::Add { name, file } => {
+            add(&mut cfg, &name, &file);
+            changed_config = true;
+        },
+        Command::Remove { name } => {
+            remove(&mut cfg, &name)?;
+            changed_config = true;
+        },
+        Command::Yoink { directory } => {
+            yoink(&cfg, &directory)?;
+        },
+        Command::Edit { name } => {
+            edit(&mut cfg, &name)?;
+        },
     }
 
     // if we changed the config (add, remove) then we need to store it again
